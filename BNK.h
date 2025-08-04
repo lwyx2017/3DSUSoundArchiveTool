@@ -105,8 +105,8 @@ typedef struct {
 	vector<bankWav> bankWavs;
 	string name;
 	string outfolder;
-	void processBank(FILE * &csar){
-		
+	void processBank(FILE*& csar) {
+
 		fseek(csar, files[fileId].fileOffset, SEEK_SET);
 		printf("Processing bank %d at %X\n", id, ftell(csar));
 		fseek(csar, 0x28, SEEK_CUR);
@@ -220,8 +220,15 @@ typedef struct {
 						if (instruments[j].notes[k].type == 0x6000) {
 							//							printf("Reading note number %d at %X\n", k, ftell(sar));
 							fseek(csar, 0xC, SEEK_CUR);
+							instruments[j].notes[k].wavNumber = 0;
 							instruments[j].notes[k].wavNumber = ReadLE(csar, 32);
-
+							if (instruments[j].notes[k].wavNumber >= bankWavs.size()) {
+								printf("ERROR: Invalid wavNumber %u (max=%zu) for instrument %d, note %d\n",
+									instruments[j].notes[k].wavNumber, bankWavs.size() - 1, j, k);
+								instruments[j].notes[k].exists = false;
+								fseek(csar, 41, SEEK_CUR);
+								continue;
+							}
 							bankWavs[instruments[j].notes[k].wavNumber].exists = true;
 							//							printf("Reading wave number %d\n", instruments[j].notes[k].wavNumber);
 							fseek(csar, 4, SEEK_CUR);
@@ -240,6 +247,13 @@ typedef struct {
 						else if (instruments[j].notes[k].type == 0x6001) {
 							fseek(csar, 0x1C, SEEK_CUR);
 							instruments[j].notes[k].wavNumber = ReadLE(csar, 32);
+							if (instruments[j].notes[k].wavNumber >= bankWavs.size()) {
+								printf("ERROR: Invalid wavNumber %u (max=%zu) for instrument %d, note %d\n",
+									instruments[j].notes[k].wavNumber, bankWavs.size() - 1, j, k);
+								instruments[j].notes[k].exists = false;
+								fseek(csar, 41, SEEK_CUR);
+								continue;
+							}
 							bankWavs[instruments[j].notes[k].wavNumber].exists = true;
 
 							//									bankWavs[instruments[j].notes[k].wavNumber].exists = true;
@@ -295,6 +309,12 @@ typedef struct {
 				//						printf("Writing instrument %X\n", j);
 				bankTemplateText << "\n    InstrumentName=Instrument" << j << "\n";
 				for (k = 0; k < instruments[j].noteCount; k++) {
+					if (!instruments[j].notes[k].exists) continue;
+					if (instruments[j].notes[k].wavNumber >= bankWavs.size()) {
+						printf("CRITICAL: Skipping entire instrument %d due to corrupt data\n", j);
+						instruments[j].exists = false;
+						break;
+					}
 					if (instruments[j].notes[k].exists) {
 						bankTemplateText << "\n        Sample=" << warcs[bankWavs[instruments[j].notes[k].wavNumber].warc].name << "_" << to_string(bankWavs[instruments[j].notes[k].wavNumber].number) << "\n";
 						bankTemplateText << "            Z_LowKey=" << to_string(instruments[j].notes[k].startNote) << "\n";
